@@ -1,7 +1,7 @@
 import sqlite3, re
 import hashlib, binascii, os
 from datetime import *
-from flask import Flask, redirect, url_for, render_template, request, session, abort, flash, g
+from flask import Flask, redirect, url_for, render_template, request, session, abort, flash, g, jsonify
 
 app = Flask(__name__)
 app.secret_key = "cR25062003*"
@@ -34,26 +34,29 @@ def validateConnect(name, password, cursor):
         result += "Veuillez remplir tous les chanmps.\n"
 
     if not result:
-        cursor.execute(f"SELECT password FROM user WHERE nom = ({repr(name) });")
+        cursor.execute(f"SELECT password FROM utilisateurs WHERE nom = ({repr(name) });")
         if verify_password(str(cursor.fetchone()).replace("',)", "").replace("('", ""), password) is not True:
             result += "Nom / Mot de passe incorrect.\n"
 
     if not result:
-        cursor.execute(f"SELECT nom FROM user WHERE nom = ({ repr(name) });")
+        cursor.execute(f"SELECT nom FROM utilisateurs WHERE nom = ({ repr(name) });")
         if cursor.fetchone() is None:
             result += "Nom / Mot de passe incorrect.\n"
 
     return result
 
-def validateForm(name, email, password, confirm_password, cursor):
+def validateForm(firstname, name, email, password, confirm_password, cursor):
     result = ""
     regex_email = "^[a-z0-9]+[\._]?[a-z0-9]+[@]\w+[.]\w{2,3}$"
     regex_password = "^.*(?=.{8,})(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=]).*$"
 
-    if any(not e for e in (name, email, password, confirm_password)):
+    if any(not e for e in (firstname, name, email, password, confirm_password)):
         result += "Veuillez remplir tous les champs.\n"
         
     else:
+        if not 3 < len(firstname) < 16:
+            result += "Le prénom doit faire entre 3 et 16 caractères.\n"
+
         if not 3 < len(name) < 16:
             result += "Le nom doit faire entre 3 et 16 caractères.\n"
 
@@ -70,11 +73,11 @@ def validateForm(name, email, password, confirm_password, cursor):
             result += "Merci de renforcer votre mot de passe. Il doit contenir une majuscule, une minuscule, un numéro et un caractère spécial.\n"
 
         if not result:
-            cursor.execute(f"SELECT nom FROM user WHERE nom = ({ repr(name) });")
+            cursor.execute(f"SELECT nom FROM utilisateurs WHERE nom = ({ repr(name) });")
             if cursor.fetchone() is not None:
                 result += "Le nom est déjà utilisé.\n"
 
-            cursor.execute(f"SELECT email FROM user WHERE email = ({ repr(email) });")
+            cursor.execute(f"SELECT email FROM utilisateurs WHERE email = ({ repr(email) });")
             if cursor.fetchone() is not None:
                 result += "L'adresse mail est déjà utilisée.\n"
             
@@ -101,7 +104,7 @@ def login():
         if request.method == "POST":
             name = request.form["name"]
             password = request.form["password"]
-            hour = str(datetime.now())
+            #hour = str(datetime.now())
 
             isInvalidConnect = validateConnect(name, password, cursor)
 
@@ -111,7 +114,7 @@ def login():
 
             else:
                 try:
-                    cursor.execute(f"INSERT INTO log (nom, date) VALUES ({ repr(name) }, { repr(hour) });")
+                    #cursor.execute(f"INSERT INTO log (nom, date) VALUES ({ repr(name) }, { repr(hour) });")
                     connexion.commit()
 
                 except:
@@ -119,8 +122,7 @@ def login():
 
                 else:
                     connexion.close()
-                    flash("Connexion effectué")
-                    return redirect(url_for('login'))
+                    return redirect("/admin/")
 
 
     return render_template("login.html")
@@ -136,12 +138,14 @@ def register():
 
     else:
         if request.method == "POST":
+            firstname = request.form["firstname"]
             name = request.form["name"]
             email = request.form["email"]
             password = request.form["password"]
             confirm_password = request.form["retypepassword"]
+            inscription = str(date.today())
 
-            isInvalidForm = validateForm(name, email, password, confirm_password, cursor)
+            isInvalidForm = validateForm(firstname, name, email, password, confirm_password, cursor)
 
             password = hash_password(password)
 
@@ -151,7 +155,7 @@ def register():
 
             else:
                 try:
-                    cursor.execute(f"INSERT INTO user (nom, email, password) VALUES ({ repr(name) }, { repr(email) }, { repr(password) });")
+                    cursor.execute(f"INSERT INTO utilisateurs (prenom, nom, email, password, date) VALUES ({ repr(firstname) }, { repr(name) }, { repr(email) }, { repr(password) }, { repr(inscription) });")
                     connexion.commit()
 
                 except:
@@ -162,10 +166,29 @@ def register():
                     flash("Création du compte avec succès.")
                     return redirect(url_for('login'))
 
-
-
     return render_template("register.html")
 
+@app.route("/admin/")
+def admin():
+    try:
+        connexion = sqlite3.connect(DATABASE)
+        cursor = connexion.cursor()
+        cursor.execute('SELECT id, prenom, nom, password, email, date FROM utilisateurs')
+        items = cursor.fetchall()
+        connexion.commit()
+
+    except:
+        flash("Problème de connexion, ressayer plus tard.")
+
+    else:
+        connexion.close()
+        
+    return render_template("/admin/index.html", items=items)
+
+
+@app.route("/logout")
+def logout():
+    return redirect(url_for('index'))
 
 if __name__ == "__main__":
     app.run(debug=True)
