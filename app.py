@@ -186,6 +186,39 @@ def admin():
     return render_template("/admin/index.html", items=items)
 
 
+@app.route("/admin/edit/<name>", methods=["POST", "GET"])
+def edit_user(name):
+    try:
+        connexion = sqlite3.connect(DATABASE)
+        cursor = connexion.cursor()
+        cursor.execute(f"SELECT id, prenom, nom, password, email, date FROM utilisateurs WHERE nom = { repr(name) };")
+        infos = cursor.fetchall()
+
+    except:
+        flash("Problème de connexion, ressayer plus tard.")
+
+    else:
+        if request.method == "POST":
+            new_firstname = request.form["new_firstname"]
+            new_name = request.form["new_name"]
+            new_email = request.form["new_email"]
+            new_password = request.form["new_password"]
+
+            new_password = hash_password(new_password)
+            try:
+                cursor.execute(f"UPDATE utilisateurs SET prenom = { repr(new_firstname) }, nom = { repr(new_name) }, email = { repr(new_email) }, password = { repr(new_password) } WHERE nom = { repr(name) };")
+                connexion.commit()
+
+            except:
+                flash("Problème de la modification des informations.")
+
+            else:
+                connexion.close()
+                flash(f"Le compte de { repr(name) } a bien été modifié.")
+                return redirect(url_for('admin'))
+        
+    return render_template("/admin/edit.html", infos=infos)
+
 @app.route("/logout")
 def logout():
     return redirect(url_for('index'))
