@@ -4,9 +4,11 @@ from datetime import *
 from flask import Flask, redirect, url_for, render_template, request, session, abort, flash, g, jsonify
 
 app = Flask(__name__)
-app.secret_key = "cR25062003*"
+app.config.from_object('config')
+app.permanent_session_lifetime = timedelta(days=30)
 
 DATABASE = 'dbportfolio.db'
+
 
 def hash_password(password):
     """Hash a password for storing."""
@@ -104,6 +106,7 @@ def login():
         if request.method == "POST":
             name = request.form["name"]
             password = request.form["password"]
+            session["name"] = name
             #hour = str(datetime.now())
 
             isInvalidConnect = validateConnect(name, password, cursor)
@@ -122,8 +125,10 @@ def login():
 
                 else:
                     connexion.close()
-                    return redirect("/admin/")
+                    return redirect(url_for("admin"))
 
+                if "name" in session:
+                    return redirect(url_for("admin"))
 
     return render_template("login.html")
 
@@ -168,7 +173,7 @@ def register():
 
     return render_template("register.html")
 
-@app.route("/admin/")
+@app.route("/admin/", methods=["POST", "GET"])
 def admin():
     try:
         connexion = sqlite3.connect(DATABASE)
@@ -181,18 +186,27 @@ def admin():
         flash("Problème de connexion, ressayer plus tard.")
 
     else:
-        connexion.close()
-        
-    return render_template("/admin/index.html", items=items)
+        if "name" in session:
+            name = session["name"]
+            return render_template("/admin/index.html", items=items, name=name)
+        else:
+            return redirect(url_for('login'))
+
+@app.errorhandler(404)
+def page_not_found(e):
+    # note that we set the 404 status explicitly
+    return render_template('404.html'), 404    
 
 
-@app.route("/admin/edit/<name>", methods=["POST", "GET"])
-def edit_user(name):
+@app.route("/admin/edit/<email>", methods=["POST", "GET"])
+def edit_user(email):
     try:
         connexion = sqlite3.connect(DATABASE)
         cursor = connexion.cursor()
-        cursor.execute(f"SELECT id, prenom, nom, password, email, date FROM utilisateurs WHERE nom = { repr(name) };")
+        cursor.execute(f"SELECT id, prenom, nom, password, email, date FROM utilisateurs WHERE email = { repr(email) };")
         infos = cursor.fetchall()
+        for elt in infos:
+            id_account = elt[0]
 
     except:
         flash("Problème de connexion, ressayer plus tard.")
@@ -206,7 +220,7 @@ def edit_user(name):
 
             new_password = hash_password(new_password)
             try:
-                cursor.execute(f"UPDATE utilisateurs SET prenom = { repr(new_firstname) }, nom = { repr(new_name) }, email = { repr(new_email) }, password = { repr(new_password) } WHERE nom = { repr(name) };")
+                cursor.execute(f"UPDATE utilisateurs SET prenom = { repr(new_firstname) }, nom = { repr(new_name) }, email = { repr(new_email) }, password = { repr(new_password) } WHERE id = { repr(id_account) };")
                 connexion.commit()
 
             except:
@@ -214,14 +228,28 @@ def edit_user(name):
 
             else:
                 connexion.close()
-                flash(f"Le compte de { repr(name) } a bien été modifié.")
+                flash(f"Le compte de { repr(email) } a bien été modifié.")
                 return redirect(url_for('admin'))
         
-    return render_template("/admin/edit.html", infos=infos)
+        else:
+            if "name" in session:
+                name = session["name"]
+                return render_template("/admin/edit.html", infos=infos, name=name)
+                
+            else:
+                return redirect(url_for('login'))
 
 @app.route("/logout")
 def logout():
-    return redirect(url_for('index'))
+    try:
+        session.pop("name", None)
+        flash("Vous avez bien été déconnecté.")
+        return redirect(url_for("login"))
+
+    except:
+        flash("Erreur lors de la deconnexion.")
+
+    
 
 if __name__ == "__main__":
     app.run(debug=True)
